@@ -22,7 +22,7 @@ src/whisper_worker.py  fallback transcripts (timestamps bullet .md)
 ## Install
 
 ```sh
-./setup.sh              # build + env + quadlet + enable
+./setup.sh              # build + env + quadlet install + start
 ./setup.sh --env-only   # refresh keys only, then: systemctl --user restart transcriber
 ./setup.sh --no-start   # build and install without starting
 ```

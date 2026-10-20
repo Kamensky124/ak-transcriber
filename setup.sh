@@ -80,8 +80,11 @@ install -m 644 "$QUADLET_SRC" "$QUADLET_DIR/transcriber.container"
 
 systemctl --user daemon-reload
 if [ "$NO_START" -eq 0 ]; then
-  systemctl --user enable --now transcriber.service
-  echo "Service enabled."
+  # Note: quadlet units are "generated" — the systemd-podman generator wires
+  # default.target.wants from [Install] on every boot, so `enable` is refused
+  # with "transient or generated" and is intentionally skipped.
+  systemctl --user start transcriber.service
+  echo "Service started (boot persistence via quadlet generator)."
 fi
 
 echo
