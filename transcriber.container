@@ -1,0 +1,14 @@
+[Container]
+Image=localhost/transcriber:latest
+ContainerName=transcriber
+EnvironmentFile=%h/org/transcriber/transcriber.env
+Volume=%h/org/media/inbox:/home/andy/org/media/inbox:Z
+Volume=%h/org/transcriber/data:/var/lib/transcriber:Z
+Volume=%h/.cache/transcriber-models:/root/.cache:Z
+NoNewPrivileges=true
+
+[Service]
+Restart=always
+
+[Install]
+WantedBy=default.target
