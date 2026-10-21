@@ -9,9 +9,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Engine → the only job kind that engine may claim (partition guard).
+ENGINE_KINDS: dict[str, str] = {
+    "gemini": "transcribe",
+    "whisper": "transcribe",
+    "converter": "convert",
+}
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
   id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind           TEXT NOT NULL DEFAULT 'transcribe',
   src_path       TEXT NOT NULL UNIQUE,
   stem           TEXT NOT NULL,
   status         TEXT NOT NULL DEFAULT 'queued',
@@ -49,6 +57,7 @@ def utcnow_iso() -> str:
 @dataclass(frozen=True)
 class Job:
     id: int
+    kind: str
     src_path: str
     stem: str
     status: str
@@ -65,7 +74,7 @@ class Job:
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Job":
         return cls(
-            id=row["id"], src_path=row["src_path"], stem=row["stem"],
+            id=row["id"], kind=row["kind"], src_path=row["src_path"], stem=row["stem"],
             status=row["status"], mode=row["mode"], language_hint=row["language_hint"],
             attempts=row["attempts"], next_attempt_at=row["next_attempt_at"],
             transcript_done=row["transcript_done"], playbook_done=row["playbook_done"],
@@ -92,7 +101,16 @@ class Database:
         Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         conn = self.conn()
         conn.executescript(SCHEMA)
+        self._migrate(conn)
         conn.commit()
+
+    def _migrate(self, conn: sqlite3.Connection) -> None:
+        """Idempotent migration for DBs created before the kind column."""
+        cols = {r[1] for r in conn.execute("PRAGMA table_info(jobs)")}
+        if "kind" not in cols:
+            conn.execute(
+                "ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL"
+                " DEFAULT 'transcribe'")
 
     def conn(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
@@ -109,16 +127,17 @@ class Database:
 
     # ---- jobs -----------------------------------------------------------
     def enqueue(self, src_path: str, stem: str, mode: str, language_hint: str,
-                size_bytes: int | None) -> bool:
+                size_bytes: int | None, kind: str = "transcribe") -> bool:
         """Insert a queued job; return False if src_path already known (dedup)."""
         now = utcnow_iso()
         conn = self.conn()
         try:
             with conn:  # short transaction
                 conn.execute(
-                    "INSERT INTO jobs (src_path, stem, mode, language_hint, size_bytes,"
-                    " created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
-                    (src_path, stem, mode, language_hint, size_bytes, now, now),
+                    "INSERT INTO jobs (kind, src_path, stem, mode, language_hint,"
+                    " size_bytes, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (kind, src_path, stem, mode, language_hint, size_bytes,
+                     now, now),
                 )
             return True
         except sqlite3.IntegrityError:
@@ -137,6 +156,11 @@ class Database:
             "SELECT status, COUNT(*) AS n FROM jobs GROUP BY status").fetchall()
         return {r["status"]: r["n"] for r in rows}
 
+    def jobs_by_kind(self) -> dict[str, int]:
+        rows = self.conn().execute(
+            "SELECT kind, COUNT(*) AS n FROM jobs GROUP BY kind").fetchall()
+        return {r["kind"]: r["n"] for r in rows}
+
     def jobs_with_status(self, status: str) -> list[Job]:
         rows = self.conn().execute("SELECT * FROM jobs WHERE status=?", (status,)).fetchall()
         return [Job.from_row(r) for r in rows]
@@ -151,19 +175,23 @@ class Database:
             )
         return cur.rowcount
 
-    def claim_job(self, engine: str, whisper_capable: bool) -> Job | None:
-        """Atomically claim the oldest eligible queued job for this engine.
+    def claim_job(self, engine: str, whisper_capable: bool,
+                  kind: str = "transcribe") -> Job | None:
+        """Atomically claim the oldest eligible queued job of this kind.
 
+        Gemini/whisper claim kind='transcribe'; the converter claims kind='convert'.
         Gemini can produce both outputs; whisper only transcripts.
         """
+        if ENGINE_KINDS.get(engine, kind) != kind:
+            return None  # engine is not permitted to process this kind
         conn = self.conn()
         now = utcnow_iso()
         with conn:  # BEGIN IMMEDIATE via sqlite3 write lock inside transaction
             rows = conn.execute(
-                "SELECT * FROM jobs WHERE status='queued'"
+                "SELECT * FROM jobs WHERE status='queued' AND kind=?"
                 " AND (next_attempt_at IS NULL OR next_attempt_at<=?)"
                 " ORDER BY created_at, id",
-                (now,),
+                (kind, now),
             ).fetchall()
             for row in rows:
                 job = Job.from_row(row)

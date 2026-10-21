@@ -12,10 +12,9 @@ MODEL_FALLBACKS: dict[str, str] = {
     "gemini-3.8-flash": "gemini-3.5-flash",
     "gemini-3.5-flash": "gemini-3.8-flash",
 }
-MEDIA_EXTENSIONS = {
-    ".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg",
-    ".mp4", ".mkv", ".webm", ".mov", ".avi",
-}
+AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg"}
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".webm", ".mov", ".avi", ".m4v", ".flv"}
+MEDIA_EXTENSIONS = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS
 VALID_MODES = ("transcript", "playbook", "both")
 
 
@@ -39,8 +38,8 @@ class Config:
         return MODEL_FALLBACKS.get(self.model, "gemini-3.5-flash")
 
 
-def _int_env(name: str, default: int) -> int:
-    raw = os.environ.get(name, "")
+def _int_env(name: str, default: int, e: dict[str, str]) -> int:
+    raw = e.get(name, "")
     try:
         return int(raw) if raw else default
     except ValueError:
@@ -65,12 +64,12 @@ def load_config(env: dict[str, str] | None = None) -> Config:
         mode=mode,
         model=e.get("TRANSCRIBE_MODEL", DEFAULT_MODEL),
         db_path=e.get("TRANSCRIBE_DB", DEFAULT_DB),
-        scan_interval=_int_env("SCAN_INTERVAL", 30),
-        stable_seconds=_int_env("STABLE_SECONDS", 10),
-        max_attempts=_int_env("MAX_ATTEMPTS", 5),
+        scan_interval=_int_env("SCAN_INTERVAL", 30, e),
+        stable_seconds=_int_env("STABLE_SECONDS", 10, e),
+        max_attempts=_int_env("MAX_ATTEMPTS", 5, e),
         fallback_engine=e.get("FALLBACK_ENGINE", "whisper"),
         whisper_model=e.get("WHISPER_MODEL", "small"),
-        whisper_cpu_threads=_int_env("WHISPER_CPU_THREADS", 3),
+        whisper_cpu_threads=_int_env("WHISPER_CPU_THREADS", 3, e),
         api_keys=tuple(keys),
         dry_run=e.get("TRANSCRIBE_DRY_RUN", "0") == "1",
     )

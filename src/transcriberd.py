@@ -17,7 +17,7 @@ from pathlib import Path
 from config import Config, load_config
 from db import Database
 from keys import next_pacific_midnight
-from scanner import ScanState, language_hint_for
+from scanner import ScanState, job_kind, language_hint_for
 from whisper_worker import WhisperWorker
 
 log = logging.getLogger("transcriberd")
@@ -50,9 +50,11 @@ def scan_once(config: Config, db: Database, state: ScanState) -> int:
             size = path.stat().st_size
         except OSError:
             continue
-        if db.enqueue(str(path.resolve()), path.stem, config.mode, hint, size):
+        kind = job_kind(path)
+        if db.enqueue(str(path.resolve()), path.stem, config.mode, hint, size,
+                      kind=kind):
             enqueued += 1
-            log.info("enqueued %s (lang=%s)", path, hint or "auto")
+            log.info("enqueued %s (kind=%s lang=%s)", path, kind, hint or "auto")
     return enqueued
 
 
@@ -109,6 +111,8 @@ def run_daemon(config: Config, db: Database) -> None:
         for i, key in enumerate(config.api_keys)
     ]
     workers.append(WhisperWorker(config, db, stop_event, whisper_wake))
+    from convert_worker import ConvertWorker
+    workers.append(ConvertWorker(config, db, stop_event))
     for w in workers:
         w.start()
 
@@ -135,6 +139,10 @@ def cmd_status(config: Config, db: Database) -> int:
     print("Queue by status:")
     for status in ("queued", "running", "done", "error"):
         print(f"  {status:8} {counts.get(status, 0)}")
+    by_kind = db.jobs_by_kind()
+    print("By kind:")
+    for kind in ("transcribe", "convert"):
+        print(f"  {kind:10} {by_kind.get(kind, 0)}")
     total_keys = len(config.api_keys) or 1
     db.ensure_keys(total_keys)
     print("\nKeys:")
@@ -164,7 +172,8 @@ def cmd_enqueue(config: Config, db: Database, paths: list[str]) -> int:
         except OSError as exc:
             print(f"cannot stat {path}: {exc}", file=sys.stderr)
             return 1
-        if db.enqueue(str(path), path.stem, config.mode, hint, size):
+        kind = job_kind(path)
+        if db.enqueue(str(path), path.stem, config.mode, hint, size, kind=kind):
             added += 1
     print(f"enqueued {added} job(s)")
     return 0

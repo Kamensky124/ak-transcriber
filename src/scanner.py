@@ -10,7 +10,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import MEDIA_EXTENSIONS
+from config import MEDIA_EXTENSIONS, VIDEO_EXTENSIONS
 
 
 def has_cyrillic(text: str) -> bool:
@@ -31,6 +31,11 @@ def is_candidate(path: Path) -> bool:
     if path.stem.endswith("_done"):
         return False
     return True
+
+
+def job_kind(path: Path) -> str:
+    """'convert' for video sources (must become mp3 first), else 'transcribe'."""
+    return "convert" if path.suffix.lower() in VIDEO_EXTENSIONS else "transcribe"
 
 
 @dataclass(frozen=True)
