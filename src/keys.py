@@ -9,6 +9,11 @@ PACIFIC = ZoneInfo("America/Los_Angeles")
 
 # Substrings that identify an exhausted free-tier quota on a Gemini key.
 QUOTA_MARKERS = ("resource_exhausted", "429", "free_tier_requests", "quota")
+# Substrings that identify an invalid/revoked API key (key-level fault, not job-level).
+AUTH_MARKERS = (
+    "401", "unauthenticated", "api_key_invalid", "api key not valid",
+    "access_token_type_unsupported", "invalid_api_key",
+)
 # Transient network/5xx failures worth retrying with backoff.
 TRANSIENT_MARKERS = (
     "503", "500", "502", "429", "unavailable", "disconnected",
@@ -35,8 +40,10 @@ def next_pacific_midnight(now_utc: datetime) -> str:
 
 
 def error_class(exc: BaseException | str) -> str:
-    """Classify a Gemini failure as 'quota' | 'transient' | 'permanent'."""
+    """Classify a Gemini failure as 'auth' | 'quota' | 'transient' | 'permanent'."""
     text = str(exc).lower()
+    if any(marker in text for marker in AUTH_MARKERS):
+        return "auth"
     if any(marker in text for marker in QUOTA_MARKERS):
         return "quota"
     if any(marker in text for marker in TRANSIENT_MARKERS):

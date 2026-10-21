@@ -11,7 +11,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +20,9 @@ from config import Config
 from db import Database, Job
 
 log = logging.getLogger("gemini")
+
+# A key rejected with 401/auth is disabled for this long (manual reset-key clears it).
+AUTH_COOLDOWN_HOURS = 24
 
 TRANSCRIPT_PROMPT = """You are an expert audio transcriptionist.
 Provide a faithful, accurate, and complete transcript of this recording.
@@ -215,8 +218,8 @@ class GeminiWorker(threading.Thread):
                 except Exception as exc:
                     last_err = exc
                     kind = keys_error_class(exc)
-                    if kind == "quota":
-                        raise
+                    if kind in ("quota", "auth"):
+                        raise  # key-level faults: no per-model retries
                     if kind == "transient" and attempt < 4:
                         time.sleep(3 * attempt)
                         continue
@@ -232,6 +235,22 @@ class GeminiWorker(threading.Thread):
             self.db.set_cooldown(self.key_id, until)
             self.db.requeue_as_queued(job.id)
             log.warning("key %d quota exhausted until %s", self.key_id, until)
+        elif kind == "auth":
+            # Invalid/revoked key: it will not heal on its own. Cooldown the key
+            # (manual `reset-key` after fixing the secret) and give the job back
+            # to a healthy worker, uncounted — same contract as quota.
+            until = (datetime.now(timezone.utc)
+                     + timedelta(hours=AUTH_COOLDOWN_HOURS)).strftime(
+                         "%Y-%m-%dT%H:%M:%SZ")
+            self.db.set_cooldown(self.key_id, until)
+            self.db.requeue_as_queued(job.id)
+            log.critical(
+                "key %d REJECTED (401/auth) — jobs diverted to other keys until %s. "
+                "Owner fix: correct GEMINI_API_KEY%s in ~/org/env-files/secrets, "
+                "run ~/pets/transcriber/setup.sh --env-only, restart service, "
+                "then: podman exec transcriber python /app/transcriberd.py reset-key %d",
+                self.key_id, until, "" if self.key_id == 1 else f"_{self.key_id}",
+                self.key_id)
         elif kind == "transient":
             self.db.release_job(job.id, 1, backoff_seconds(job.attempts + 1),
                                 str(exc)[:500], False)

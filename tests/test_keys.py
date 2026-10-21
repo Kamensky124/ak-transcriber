@@ -51,6 +51,18 @@ class TestErrorClassification(unittest.TestCase):
         # a 429 is quota, not generic transient
         self.assertEqual(error_class("429 too many requests"), "quota")
 
+    def test_auth(self) -> None:
+        real = ("401 UNAUTHENTICATED. {'error': {'code': 401, 'message': "
+                "'API key not valid. Please pass a valid API key.', "
+                "'status': 'UNAUTHENTICATED'}}")
+        for msg in (real, "API_KEY_INVALID", "ACCESS_TOKEN_TYPE_UNSUPPORTED"):
+            self.assertEqual(error_class(msg), "auth")
+
+    def test_auth_wins_over_transient(self) -> None:
+        # a 401 carrying the word "connection" in the payload is still auth
+        self.assertEqual(
+            error_class("401 UNAUTHENTICATED while opening connection"), "auth")
+
     def test_backoff(self) -> None:
         self.assertEqual(backoff_seconds(1), 60)
         self.assertEqual(backoff_seconds(2), 120)
