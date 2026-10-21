@@ -65,6 +65,11 @@ class WhisperWorker(threading.Thread):
             if job is None:
                 self.stop_event.wait(5)
                 continue
+            src = Path(job.src_path)
+            if not src.exists():
+                log.warning("whisper source file missing: %s, dropping job", src)
+                self.db.release_job(job.id, 1, 0, "file missing", True)
+                continue
             try:
                 self._process(job.id, job.src_path, job.stem)
             except Exception:  # defensive

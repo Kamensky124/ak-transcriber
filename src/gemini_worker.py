@@ -138,6 +138,10 @@ class GeminiWorker(threading.Thread):
     # -- per-job pipeline --------------------------------------------------
     def process(self, job: Job) -> None:
         src = Path(job.src_path)
+        if not src.exists():
+            log.warning("gemini source file missing: %s, dropping job", src)
+            self.db.release_job(job.id, 1, 0, "file missing", True)
+            return
         if self.config.dry_run:
             self._dry_run(job, src)
             return

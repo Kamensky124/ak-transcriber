@@ -23,6 +23,8 @@ class TestPureFilters(unittest.TestCase):
         self.assertTrue(is_candidate(Path("/i/rec.mp3")))
         self.assertTrue(is_candidate(Path("/i/rec.MP3")))
         self.assertFalse(is_candidate(Path("/i/.hidden.mp3")))
+        self.assertFalse(is_candidate(Path("/i/.originals/rec.mp3")))
+        self.assertFalse(is_candidate(Path("/i/sub/.hidden_dir/rec.mp3")))
         self.assertFalse(is_candidate(Path("/i/rec.txt")))
         self.assertFalse(is_candidate(Path("/i/rec_done.mp3")))
         self.assertFalse(is_candidate(Path("/i/rec_done.guide.md")))  # irrelevant ext

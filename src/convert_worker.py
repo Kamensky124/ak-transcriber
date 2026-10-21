@@ -48,6 +48,10 @@ class ConvertWorker(threading.Thread):
     # -- pipeline ----------------------------------------------------------
     def process(self, job: Job) -> None:
         src = Path(job.src_path)
+        if not src.exists():
+            log.warning("convert source file missing: %s, dropping job", src)
+            self.db.release_job(job.id, 1, 0, "file missing", True)
+            return
         out = src.with_suffix(".mp3")
         try:
             if self.config.dry_run:

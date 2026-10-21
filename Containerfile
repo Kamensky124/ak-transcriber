@@ -5,7 +5,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends ffmpeg tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir google-genai faster-whisper
+RUN pip install --no-cache-dir google-genai faster-whisper "av<19"
 
 COPY src/ /app/
 

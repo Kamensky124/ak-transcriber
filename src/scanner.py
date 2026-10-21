@@ -24,7 +24,7 @@ def language_hint_for(relative_path: str) -> str:
 
 def is_candidate(path: Path) -> bool:
     """Extension/hidden/_done filters for a media file path."""
-    if path.name.startswith("."):
+    if any(part.startswith(".") and part not in (".", "..") for part in path.parts):
         return False
     if path.suffix.lower() not in MEDIA_EXTENSIONS:
         return False
