@@ -6,3 +6,4 @@
 - No secrets in code, tests, or DB. Keys come only from the env file via `setup.sh`.
 - Host paths inside the container are identical to host paths (see `transcriber.container` volumes).
 - Schema/behavior contract: SQLite WAL, per-thread connections, short transactions; DRY_RUN via `TRANSCRIBE_DRY_RUN=1`.
+- **Documentation**: All documentation lives in `docs/` inside this repo. NEVER save or create documentation in `~/org/wiki/`.
